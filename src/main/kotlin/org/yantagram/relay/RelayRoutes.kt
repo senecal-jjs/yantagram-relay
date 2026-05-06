@@ -11,10 +11,18 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import org.slf4j.LoggerFactory
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import kotlin.time.Duration.Companion.seconds
+
+private val logger = LoggerFactory.getLogger("org.yantagram.relay.RingStats")
 
 /** Constant-time byte-array equality, length-aware. */
 private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean {
@@ -42,6 +50,20 @@ fun Application.relayModule(
     }
 
     openApiModule()
+
+    // Periodically log ring memory usage.
+    CoroutineScope(Dispatchers.Default).launch {
+        while (true) {
+            delay(30.seconds)
+            logger.info(
+                "ring: {} bytes / {} max ({} packets, seq={})",
+                ring.currentBytes(),
+                config.ringMaxBytes,
+                ring.packetCount(),
+                ring.latestSeq(),
+            )
+        }
+    }
 
     routing {
         // Publisher endpoint: POST binary payload with X-Publish-Secret header.
@@ -88,8 +110,3 @@ fun Application.relayModule(
         }
     }
 }
-
-
-
-
-

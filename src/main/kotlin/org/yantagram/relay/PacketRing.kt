@@ -54,5 +54,10 @@ class PacketRing(private val maxBytes: Long) {
 
     /** Highest seq currently assigned, or 0 if none. */
     fun latestSeq(): Long = synchronized(lock) { nextSeq - 1 }
-}
 
+    /** Current total payload bytes stored in the ring. */
+    fun currentBytes(): Long = synchronized(lock) { totalBytes }
+
+    /** Number of packets currently in the ring. */
+    fun packetCount(): Int = synchronized(lock) { deque.size }
+}
