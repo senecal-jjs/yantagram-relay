@@ -1,14 +1,16 @@
 package org.yantagram.relay
 
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
+import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
-import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
-import io.ktor.websocket.close
-import io.ktor.websocket.readBytes
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.collect
 import java.nio.ByteBuffer
@@ -40,28 +42,22 @@ fun Application.relayModule(
     }
 
     routing {
-        // Publisher endpoint: first binary frame must be the shared secret.
-        webSocket("/publish") {
-            try {
-                val first = incoming.receive()
-                if (first !is Frame.Binary) {
-                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "binary expected"))
-                    return@webSocket
-                }
-                if (!constantTimeEquals(first.readBytes(), config.publishSecret)) {
-                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "unauthorized"))
-                    return@webSocket
-                }
-
-                for (frame in incoming) {
-                    if (frame is Frame.Binary) {
-                        ring.append(frame.readBytes())
-                    }
-                    // Silently ignore non-binary frames.
-                }
-            } catch (_: ClosedReceiveChannelException) {
-                // peer closed; nothing to do
+        // Publisher endpoint: POST binary payload with X-Publish-Secret header.
+        post("/publish") {
+            val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
+            if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
+                call.respond(HttpStatusCode.Unauthorized, "unauthorized")
+                return@post
             }
+
+            val body = call.receive<ByteArray>()
+            if (body.isEmpty()) {
+                call.respond(HttpStatusCode.BadRequest, "empty payload")
+                return@post
+            }
+
+            ring.append(body)
+            call.respond(HttpStatusCode.NoContent)
         }
 
         // Subscriber endpoint: optional ?since=<seq> for catch-up replay.

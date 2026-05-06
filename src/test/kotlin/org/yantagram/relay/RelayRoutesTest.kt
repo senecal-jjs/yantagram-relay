@@ -2,6 +2,12 @@ package org.yantagram.relay
 
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
 import io.ktor.client.plugins.websocket.webSocketSession
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -14,10 +20,12 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 
 class RelayRoutesTest {
 
     private val secret = "test-secret".toByteArray()
+    private val secretStr = "test-secret"
 
     private fun testConfig(ringBytes: Long = 1024L, maxFrame: Long = 1L * 1024 * 1024) =
         RelayConfig(
@@ -41,16 +49,19 @@ class RelayRoutesTest {
         val cfg = testConfig()
         val ring = PacketRing(cfg.ringMaxBytes)
         application { relayModule(cfg, ring) }
-        val client = createClient { install(ClientWebSockets) }
+        val wsClient = createClient { install(ClientWebSockets) }
 
-        val sub = client.webSocketSession("/subscribe")
-        delay(150)
+        val sub = wsClient.webSocketSession("/subscribe")
+        delay(150.milliseconds)
 
-        val pub = client.webSocketSession("/publish")
-        pub.send(Frame.Binary(true, secret))
-        pub.send(Frame.Binary(true, "hello".toByteArray()))
+        val response = client.post("/publish") {
+            header("X-Publish-Secret", secretStr)
+            contentType(ContentType.Application.OctetStream)
+            setBody("hello".toByteArray())
+        }
+        assertEquals(HttpStatusCode.NoContent, response.status)
 
-        val (seq, payload) = withTimeout(2000) {
+        val (seq, payload) = withTimeout(2000.milliseconds) {
             val frame = sub.incoming.receive() as Frame.Binary
             decode(frame.readBytes())
         }
@@ -58,7 +69,6 @@ class RelayRoutesTest {
         assertEquals(1L, seq)
         assertContentEquals("hello".toByteArray(), payload)
 
-        pub.close()
         sub.close()
     }
 
@@ -66,12 +76,25 @@ class RelayRoutesTest {
     fun `wrong publish secret is rejected`() = testApplication {
         val cfg = testConfig()
         application { relayModule(cfg, PacketRing(cfg.ringMaxBytes)) }
-        val client = createClient { install(ClientWebSockets) }
 
-        val pub = client.webSocketSession("/publish")
-        pub.send(Frame.Binary(true, "wrong".toByteArray()))
-        val closed = withTimeout(2000) { pub.closeReason.await() }
-        assertTrue(closed != null)
+        val response = client.post("/publish") {
+            header("X-Publish-Secret", "wrong")
+            contentType(ContentType.Application.OctetStream)
+            setBody("hello".toByteArray())
+        }
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+    }
+
+    @Test
+    fun `publish without secret header is rejected`() = testApplication {
+        val cfg = testConfig()
+        application { relayModule(cfg, PacketRing(cfg.ringMaxBytes)) }
+
+        val response = client.post("/publish") {
+            contentType(ContentType.Application.OctetStream)
+            setBody("hello".toByteArray())
+        }
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
     }
 
     @Test
@@ -79,7 +102,7 @@ class RelayRoutesTest {
         val cfg = testConfig()
         val ring = PacketRing(cfg.ringMaxBytes)
         application { relayModule(cfg, ring) }
-        val client = createClient { install(ClientWebSockets) }
+        val wsClient = createClient { install(ClientWebSockets) }
 
         runBlocking {
             ring.append("a".toByteArray())
@@ -87,9 +110,9 @@ class RelayRoutesTest {
             ring.append("c".toByteArray())
         }
 
-        val sub = client.webSocketSession("/subscribe?since=1")
+        val sub = wsClient.webSocketSession("/subscribe?since=1")
         val received = mutableListOf<Pair<Long, ByteArray>>()
-        withTimeout(2000) {
+        withTimeout(2000.milliseconds) {
             repeat(2) {
                 val frame = sub.incoming.receive() as Frame.Binary
                 received += decode(frame.readBytes())
