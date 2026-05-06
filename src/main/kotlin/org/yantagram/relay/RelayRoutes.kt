@@ -41,6 +41,8 @@ fun Application.relayModule(
         timeoutMillis = 60_000
     }
 
+    openApiModule()
+
     routing {
         // Publisher endpoint: POST binary payload with X-Publish-Secret header.
         post("/publish") {

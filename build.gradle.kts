@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm") version "2.3.0"
+    kotlin("plugin.serialization") version "2.3.0"
     application
 }
 
@@ -16,7 +17,10 @@ dependencies {
     implementation("io.ktor:ktor-server-core-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-cio-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-websockets-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:$ktorVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("ch.qos.logback:logback-classic:1.5.13")
 
     testImplementation(kotlin("test"))
