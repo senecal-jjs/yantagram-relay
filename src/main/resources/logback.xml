@@ -1,8 +1,8 @@
 <configuration>
     <!-- Quiet by design: a public relay should not log per-connection details. -->
-    <root level="WARN">
+    <root level="INFO">
     </root>
-    <logger name="io.ktor" level="WARN"/>
+    <logger name="io.ktor" level="INFO"/>
     <logger name="org.yantagram" level="INFO"/>
 </configuration>
 
