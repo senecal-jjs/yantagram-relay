@@ -46,9 +46,18 @@ private fun encodeOutbound(packet: Packet): ByteArray {
     return buf.array()
 }
 
+/** Creates a [RingLimitProvider] that dynamically computes the ring limit from JVM heap. */
+private fun jvmAwareLimitProvider(config: RelayConfig): RingLimitProvider = RingLimitProvider {
+    val runtime = Runtime.getRuntime()
+    val maxHeap = runtime.maxMemory()
+    val fractionLimit = (maxHeap * config.ringHeapFraction).toLong()
+    val hardCap = config.ringHardCapBytes
+    if (hardCap != null) minOf(fractionLimit, hardCap) else fractionLimit
+}
+
 fun Application.relayModule(
     config: RelayConfig,
-    ring: PacketRing = PacketRing(config.ringMaxBytes),
+    ring: PacketRing = PacketRing(jvmAwareLimitProvider(config)),
 ) {
     install(WebSockets) {
         maxFrameSize = config.maxFrameBytes
@@ -70,10 +79,12 @@ fun Application.relayModule(
             @Suppress("DEPRECATION")
             val osTotal = osBean.totalPhysicalMemorySize
 
+            val effectiveMax = jvmAwareLimitProvider(config).effectiveMaxBytes()
+
             logger.info(
-                "ring: {} bytes / {} max ({} packets, seq={}) | jvm: {} / {} MB | os: {} / {} MB free",
-                ring.currentBytes(),
-                config.ringMaxBytes,
+                "ring: {} / {} MB ({} packets, seq={}) | jvm: {} / {} MB | os: {} / {} MB free",
+                ring.currentBytes() / 1_048_576,
+                effectiveMax / 1_048_576,
                 ring.packetCount(),
                 ring.latestSeq(),
                 jvmUsed / 1_048_576,

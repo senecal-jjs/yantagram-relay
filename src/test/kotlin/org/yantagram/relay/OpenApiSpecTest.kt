@@ -22,14 +22,15 @@ class OpenApiSpecTest {
         host = "127.0.0.1",
         port = 0,
         publishSecret = secret,
-        ringMaxBytes = 1024L,
+        ringHeapFraction = 0.5,
+        ringHardCapBytes = null,
         maxFrameBytes = 1L * 1024 * 1024,
     )
 
     @Test
     fun `openapi spec is served and valid`() = testApplication {
         val cfg = testConfig()
-        application { relayModule(cfg, PacketRing(cfg.ringMaxBytes)) }
+        application { relayModule(cfg, PacketRing(1024L)) }
 
         val response = client.get("/openapi.json")
         assertEquals(HttpStatusCode.OK, response.status)
@@ -68,7 +69,7 @@ class OpenApiSpecTest {
     @Test
     fun `export openapi spec to build directory`() = testApplication {
         val cfg = testConfig()
-        application { relayModule(cfg, PacketRing(cfg.ringMaxBytes)) }
+        application { relayModule(cfg, PacketRing(1024L)) }
 
         val response = client.get("/openapi.json")
         assertEquals(HttpStatusCode.OK, response.status)

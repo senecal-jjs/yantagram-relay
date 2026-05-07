@@ -30,12 +30,13 @@ class RelayRoutesTest {
     private val secret = "test-secret".toByteArray()
     private val secretStr = "test-secret"
 
-    private fun testConfig(ringBytes: Long = 1024L, maxFrame: Long = 1L * 1024 * 1024) =
+    private fun testConfig(maxFrame: Long = 1L * 1024 * 1024) =
         RelayConfig(
             host = "127.0.0.1",
             port = 0,
             publishSecret = secret,
-            ringMaxBytes = ringBytes,
+            ringHeapFraction = 0.5,
+            ringHardCapBytes = null,
             maxFrameBytes = maxFrame,
         )
 
@@ -57,7 +58,7 @@ class RelayRoutesTest {
     @Test
     fun `publish then live subscribe receives the packet`() = testApplication {
         val cfg = testConfig()
-        val ring = PacketRing(cfg.ringMaxBytes)
+        val ring = PacketRing(1024L)
         application { relayModule(cfg, ring) }
         val wsClient = createClient { install(ClientWebSockets) }
 
@@ -86,7 +87,7 @@ class RelayRoutesTest {
     @Test
     fun `publish with verification key is delivered to subscriber`() = testApplication {
         val cfg = testConfig()
-        val ring = PacketRing(cfg.ringMaxBytes)
+        val ring = PacketRing(1024L)
         application { relayModule(cfg, ring) }
         val wsClient = createClient { install(ClientWebSockets) }
 
@@ -116,7 +117,7 @@ class RelayRoutesTest {
     @Test
     fun `subscriber with keys filter only receives matching packets`() = testApplication {
         val cfg = testConfig()
-        val ring = PacketRing(cfg.ringMaxBytes)
+        val ring = PacketRing(1024L)
         application { relayModule(cfg, ring) }
         val wsClient = createClient { install(ClientWebSockets) }
 
@@ -158,7 +159,7 @@ class RelayRoutesTest {
     @Test
     fun `subscriber with multiple keys filter receives all matching`() = testApplication {
         val cfg = testConfig()
-        val ring = PacketRing(cfg.ringMaxBytes)
+        val ring = PacketRing(1024L)
         application { relayModule(cfg, ring) }
         val wsClient = createClient { install(ClientWebSockets) }
 
@@ -201,7 +202,7 @@ class RelayRoutesTest {
     @Test
     fun `replay with keys filter only returns matching packets`() = testApplication {
         val cfg = testConfig()
-        val ring = PacketRing(cfg.ringMaxBytes)
+        val ring = PacketRing(1024L)
         application { relayModule(cfg, ring) }
         val wsClient = createClient { install(ClientWebSockets) }
 
@@ -228,7 +229,7 @@ class RelayRoutesTest {
     @Test
     fun `verification key exceeding max length is rejected`() = testApplication {
         val cfg = testConfig()
-        application { relayModule(cfg, PacketRing(cfg.ringMaxBytes)) }
+        application { relayModule(cfg, PacketRing(1024L)) }
 
         val longKey = "x".repeat(65)
         val response = client.post("/publish") {
@@ -243,7 +244,7 @@ class RelayRoutesTest {
     @Test
     fun `wrong publish secret is rejected`() = testApplication {
         val cfg = testConfig()
-        application { relayModule(cfg, PacketRing(cfg.ringMaxBytes)) }
+        application { relayModule(cfg, PacketRing(1024L)) }
 
         val response = client.post("/publish") {
             header("X-Publish-Secret", "wrong")
@@ -256,7 +257,7 @@ class RelayRoutesTest {
     @Test
     fun `publish without secret header is rejected`() = testApplication {
         val cfg = testConfig()
-        application { relayModule(cfg, PacketRing(cfg.ringMaxBytes)) }
+        application { relayModule(cfg, PacketRing(1024L)) }
 
         val response = client.post("/publish") {
             contentType(ContentType.Application.OctetStream)
@@ -268,7 +269,7 @@ class RelayRoutesTest {
     @Test
     fun `subscribe with since replays only newer packets`() = testApplication {
         val cfg = testConfig()
-        val ring = PacketRing(cfg.ringMaxBytes)
+        val ring = PacketRing(1024L)
         application { relayModule(cfg, ring) }
         val wsClient = createClient { install(ClientWebSockets) }
 
@@ -295,7 +296,9 @@ class RelayRoutesTest {
 
     @Test
     fun `ring evicts oldest past max bytes`() = runBlocking {
-        val ring = PacketRing(maxBytes = 4)
+        // Each 2-byte packet costs ~82 bytes (80 overhead + 2 payload).
+        // maxBytes=164 fits exactly 2 packets, so the 3rd triggers eviction.
+        val ring = PacketRing(maxBytes = 164)
         ring.append(byteArrayOf(1, 2))
         ring.append(byteArrayOf(3, 4))
         ring.append(byteArrayOf(5, 6))
