@@ -10,6 +10,16 @@ data class RelayConfig(
     /** Optional hard cap on ring size in bytes. If set, effective limit = min(fraction-based, hardCap). */
     val ringHardCapBytes: Long?,
     val maxFrameBytes: Long,
+    /** Interval in seconds for server→client keep-alive on /subscribe. 0 to disable. */
+    val keepAlivePeriodSeconds: Long = 15,
+    /** Max seconds to wait for a client heartbeat before closing. 0 to disable. */
+    val clientHeartbeatTimeoutSeconds: Long = 60,
+    /** Path to SQLite database file. Use ":memory:" for in-memory only (no persistence). */
+    val dbPath: String = "yantagram-relay.db",
+    /** Async batch flush interval in milliseconds. */
+    val dbFlushIntervalMs: Long = 500,
+    /** Max DB history retention in bytes. 0 = unlimited. */
+    val dbMaxHistoryBytes: Long = 0,
 ) {
     companion object {
         fun fromEnv(): RelayConfig {
@@ -22,6 +32,11 @@ data class RelayConfig(
                 ringHeapFraction = System.getenv("RING_HEAP_FRACTION")?.toDoubleOrNull() ?: 0.5,
                 ringHardCapBytes = System.getenv("RING_MAX_BYTES")?.toLongOrNull(),
                 maxFrameBytes = System.getenv("MAX_FRAME_BYTES")?.toLongOrNull() ?: (1L * 1024 * 1024),
+                keepAlivePeriodSeconds = System.getenv("KEEP_ALIVE_PERIOD_SECONDS")?.toLongOrNull() ?: 15,
+                clientHeartbeatTimeoutSeconds = System.getenv("CLIENT_HEARTBEAT_TIMEOUT_SECONDS")?.toLongOrNull() ?: 60,
+                dbPath = System.getenv("DB_PATH") ?: "yantagram-relay.db",
+                dbFlushIntervalMs = System.getenv("DB_FLUSH_INTERVAL_MS")?.toLongOrNull() ?: 500,
+                dbMaxHistoryBytes = System.getenv("DB_MAX_HISTORY_BYTES")?.toLongOrNull() ?: 0,
             )
         }
     }

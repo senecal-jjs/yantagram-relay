@@ -321,4 +321,42 @@ class RelayRoutesTest {
         runBlocking { ring.append(byteArrayOf(1)) }
         assertTrue(ring.snapshotSince(10).isEmpty())
     }
+
+    @Test
+    fun `subscriber receives server heartbeat when idle`() = testApplication {
+        val cfg = testConfig().copy(keepAlivePeriodSeconds = 1, clientHeartbeatTimeoutSeconds = 0)
+        val ring = PacketRing(1024L)
+        application { relayModule(cfg, ring) }
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        val sub = wsClient.webSocketSession("/subscribe")
+
+        // Wait for heartbeat (should arrive within ~1 second)
+        val decoded = withTimeout(3000.milliseconds) {
+            val frame = sub.incoming.receive() as Frame.Binary
+            decode(frame.readBytes())
+        }
+
+        assertEquals(0L, decoded.seq, "heartbeat must have seq=0")
+        assertNull(decoded.verificationKey)
+        assertTrue(decoded.payload.isEmpty(), "heartbeat payload must be empty")
+
+        sub.close()
+    }
+
+    @Test
+    fun `subscriber is closed when client does not send heartbeat`() = testApplication {
+        val cfg = testConfig().copy(keepAlivePeriodSeconds = 0, clientHeartbeatTimeoutSeconds = 1)
+        val ring = PacketRing(1024L)
+        application { relayModule(cfg, ring) }
+        val wsClient = createClient { install(ClientWebSockets) }
+
+        val sub = wsClient.webSocketSession("/subscribe")
+
+        // Don't send any frames — server should close within ~1 second
+        val reason = withTimeout(5000.milliseconds) {
+            sub.closeReason.await()
+        }
+        assertTrue(reason != null, "server should have closed the connection")
+    }
 }

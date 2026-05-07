@@ -36,13 +36,19 @@ data class Packet(val seq: Long, val verificationKey: String?, val payload: Byte
  * The limit is re-evaluated on every append, allowing dynamic adjustment based on
  * remaining JVM heap memory.
  *
+ * Optionally integrates with a [PacketStore] for async persistence — packets are
+ * enqueued for batch writing to SQLite after being added to the ring.
+ *
  * Live emissions go through [stream] for fan-out to subscribers; replay of unseen
  * packets is served via [snapshotSince].
  */
-class PacketRing(private val limitProvider: RingLimitProvider) {
+class PacketRing(
+    private val limitProvider: RingLimitProvider,
+    private val store: PacketStore? = null,
+) {
 
     /** Convenience constructor for a fixed byte limit (useful in tests). */
-    constructor(maxBytes: Long) : this(RingLimitProvider { maxBytes })
+    constructor(maxBytes: Long) : this(RingLimitProvider { maxBytes }, null)
 
     private val lock = Any()
     private val deque: ArrayDeque<Packet> = ArrayDeque()
@@ -55,7 +61,35 @@ class PacketRing(private val limitProvider: RingLimitProvider) {
     )
     val stream: SharedFlow<Packet> = _stream.asSharedFlow()
 
-    /** Append a payload, evict oldest as needed, and emit to [stream]. Returns the assigned packet. */
+    /**
+     * Restore state from the [store] on startup.
+     * Reloads nextSeq and recent packets into the in-memory ring for immediate replay.
+     * Call once before serving traffic.
+     */
+    fun restore(replayLimit: Int = 10_000) {
+        val s = store ?: return
+        val restoredSeq = s.loadNextSeq()
+        synchronized(lock) {
+            nextSeq = restoredSeq
+        }
+        // Reload recent packets into memory for immediate replay
+        val sinceSeq = maxOf(0L, restoredSeq - replayLimit - 1)
+        val packets = s.loadSince(sinceSeq, replayLimit)
+        synchronized(lock) {
+            for (p in packets) {
+                deque.addLast(p)
+                totalBytes += p.estimatedBytes()
+            }
+            // Evict if over limit
+            val maxBytes = limitProvider.effectiveMaxBytes()
+            while (totalBytes > maxBytes && deque.size > 1) {
+                val removed = deque.removeFirst()
+                totalBytes -= removed.estimatedBytes()
+            }
+        }
+    }
+
+    /** Append a payload, evict oldest as needed, persist, and emit to [stream]. Returns the assigned packet. */
     suspend fun append(payload: ByteArray, verificationKey: String? = null): Packet {
         val packet = synchronized(lock) {
             val p = Packet(nextSeq++, verificationKey, payload)
@@ -68,6 +102,7 @@ class PacketRing(private val limitProvider: RingLimitProvider) {
             }
             p
         }
+        store?.enqueue(packet)
         _stream.emit(packet)
         return packet
     }
