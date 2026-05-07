@@ -14,6 +14,12 @@ data class RelayConfig(
     val keepAlivePeriodSeconds: Long = 15,
     /** Max seconds to wait for a client heartbeat before closing. 0 to disable. */
     val clientHeartbeatTimeoutSeconds: Long = 60,
+    /** Path to SQLite database file. Use ":memory:" for in-memory only (no persistence). */
+    val dbPath: String = "yantagram-relay.db",
+    /** Async batch flush interval in milliseconds. */
+    val dbFlushIntervalMs: Long = 500,
+    /** Max DB history retention in bytes. 0 = unlimited. */
+    val dbMaxHistoryBytes: Long = 0,
 ) {
     companion object {
         fun fromEnv(): RelayConfig {
@@ -28,6 +34,9 @@ data class RelayConfig(
                 maxFrameBytes = System.getenv("MAX_FRAME_BYTES")?.toLongOrNull() ?: (1L * 1024 * 1024),
                 keepAlivePeriodSeconds = System.getenv("KEEP_ALIVE_PERIOD_SECONDS")?.toLongOrNull() ?: 15,
                 clientHeartbeatTimeoutSeconds = System.getenv("CLIENT_HEARTBEAT_TIMEOUT_SECONDS")?.toLongOrNull() ?: 60,
+                dbPath = System.getenv("DB_PATH") ?: "yantagram-relay.db",
+                dbFlushIntervalMs = System.getenv("DB_FLUSH_INTERVAL_MS")?.toLongOrNull() ?: 500,
+                dbMaxHistoryBytes = System.getenv("DB_MAX_HISTORY_BYTES")?.toLongOrNull() ?: 0,
             )
         }
     }

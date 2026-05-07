@@ -53,7 +53,7 @@ private fun encodeOutbound(packet: Packet): ByteArray {
 }
 
 /** Creates a [RingLimitProvider] that dynamically computes the ring limit from JVM heap. */
-private fun jvmAwareLimitProvider(config: RelayConfig): RingLimitProvider = RingLimitProvider {
+internal fun jvmAwareLimitProvider(config: RelayConfig): RingLimitProvider = RingLimitProvider {
     val runtime = Runtime.getRuntime()
     val maxHeap = runtime.maxMemory()
     val fractionLimit = (maxHeap * config.ringHeapFraction).toLong()
