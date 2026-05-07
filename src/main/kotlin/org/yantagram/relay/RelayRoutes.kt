@@ -18,11 +18,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import java.lang.management.ManagementFactory
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
 
 private val logger = LoggerFactory.getLogger("org.yantagram.relay.RingStats")
+private val osBean = ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
 
 /** Constant-time byte-array equality, length-aware. */
 private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean {
@@ -55,12 +57,24 @@ fun Application.relayModule(
     CoroutineScope(Dispatchers.Default).launch {
         while (true) {
             delay(30.seconds)
+            val runtime = Runtime.getRuntime()
+            val jvmUsed = runtime.totalMemory() - runtime.freeMemory()
+            val jvmMax = runtime.maxMemory()
+            @Suppress("DEPRECATION")
+            val osFree = osBean.freePhysicalMemorySize
+            @Suppress("DEPRECATION")
+            val osTotal = osBean.totalPhysicalMemorySize
+
             logger.info(
-                "ring: {} bytes / {} max ({} packets, seq={})",
+                "ring: {} bytes / {} max ({} packets, seq={}) | jvm: {} / {} MB | os: {} / {} MB free",
                 ring.currentBytes(),
                 config.ringMaxBytes,
                 ring.packetCount(),
                 ring.latestSeq(),
+                jvmUsed / 1_048_576,
+                jvmMax / 1_048_576,
+                osFree / 1_048_576,
+                osTotal / 1_048_576,
             )
         }
     }
