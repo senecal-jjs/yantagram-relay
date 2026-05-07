@@ -5,6 +5,21 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.util.ArrayDeque
 
+/** Estimated JVM overhead per Packet: object header + fields + ArrayDeque node reference. */
+private const val PER_PACKET_OVERHEAD = 80L
+
+/** Estimate the in-memory byte cost of a [Packet], including payload, key, and JVM overhead. */
+private fun Packet.estimatedBytes(): Long =
+    PER_PACKET_OVERHEAD + payload.size + (verificationKey?.length?.times(2L) ?: 0L)
+
+/**
+ * Provides the current effective max bytes the ring is allowed to use.
+ * Called on every append to allow dynamic adjustment based on JVM memory.
+ */
+fun interface RingLimitProvider {
+    fun effectiveMaxBytes(): Long
+}
+
 /** A relayed binary packet. `seq` is monotonically assigned by the server. */
 data class Packet(val seq: Long, val verificationKey: String?, val payload: ByteArray) {
     override fun equals(other: Any?): Boolean =
@@ -15,11 +30,20 @@ data class Packet(val seq: Long, val verificationKey: String?, val payload: Byte
 }
 
 /**
- * Bounded in-memory ring of packets evicting oldest entries until the total payload
- * byte count is <= [maxBytes]. Live emissions go through [stream] for fan-out to
- * subscribers; replay of unseen packets is served via [snapshotSince].
+ * Bounded in-memory ring of packets evicting oldest entries until the estimated total
+ * memory usage is <= the limit returned by [limitProvider].
+ *
+ * The limit is re-evaluated on every append, allowing dynamic adjustment based on
+ * remaining JVM heap memory.
+ *
+ * Live emissions go through [stream] for fan-out to subscribers; replay of unseen
+ * packets is served via [snapshotSince].
  */
-class PacketRing(private val maxBytes: Long) {
+class PacketRing(private val limitProvider: RingLimitProvider) {
+
+    /** Convenience constructor for a fixed byte limit (useful in tests). */
+    constructor(maxBytes: Long) : this(RingLimitProvider { maxBytes })
+
     private val lock = Any()
     private val deque: ArrayDeque<Packet> = ArrayDeque()
     private var totalBytes: Long = 0L
@@ -36,10 +60,11 @@ class PacketRing(private val maxBytes: Long) {
         val packet = synchronized(lock) {
             val p = Packet(nextSeq++, verificationKey, payload)
             deque.addLast(p)
-            totalBytes += p.payload.size
+            totalBytes += p.estimatedBytes()
+            val maxBytes = limitProvider.effectiveMaxBytes()
             while (totalBytes > maxBytes && deque.size > 1) {
                 val removed = deque.removeFirst()
-                totalBytes -= removed.payload.size
+                totalBytes -= removed.estimatedBytes()
             }
             p
         }
@@ -56,7 +81,7 @@ class PacketRing(private val maxBytes: Long) {
     /** Highest seq currently assigned, or 0 if none. */
     fun latestSeq(): Long = synchronized(lock) { nextSeq - 1 }
 
-    /** Current total payload bytes stored in the ring. */
+    /** Current estimated total bytes stored in the ring (payload + key + overhead). */
     fun currentBytes(): Long = synchronized(lock) { totalBytes }
 
     /** Number of packets currently in the ring. */
