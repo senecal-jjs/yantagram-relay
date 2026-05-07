@@ -48,6 +48,19 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                     add(buildJsonObject { putJsonArray("publishSecret") {} })
                 }
 
+                putJsonArray("parameters") {
+                    add(buildJsonObject {
+                        put("name", "X-Verification-Key")
+                        put("in", "header")
+                        put("required", false)
+                        put("description", "Optional verification key to tag this packet. Subscribers can filter by key. Max 64 characters.")
+                        putJsonObject("schema") {
+                            put("type", "string")
+                            put("maxLength", JsonPrimitive(64))
+                        }
+                    })
+                }
+
                 putJsonObject("requestBody") {
                     put("required", true)
                     putJsonObject("content") {
@@ -97,7 +110,8 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                     """
                     WebSocket upgrade endpoint. After connection, the server replays buffered packets
                     with seq > `since` (if provided), then streams new packets in real-time.
-                    Each message is a binary frame: [seq:8 bytes big-endian][payload].
+                    If `keys` is specified, only packets tagged with a matching verification key are delivered.
+                    Each message is a binary frame: [seq:8 bytes big-endian][keyLen:2 bytes big-endian][key bytes][payload].
                     """.trimIndent()
                 )
 
@@ -111,6 +125,15 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                             put("type", "integer")
                             put("format", "int64")
                             put("default", JsonPrimitive(0))
+                        }
+                    })
+                    add(buildJsonObject {
+                        put("name", "keys")
+                        put("in", "query")
+                        put("required", false)
+                        put("description", "Comma-separated list of verification keys to filter by. If omitted, all packets are delivered.")
+                        putJsonObject("schema") {
+                            put("type", "string")
                         }
                     })
                 }
@@ -137,4 +160,3 @@ fun Application.openApiModule() {
         }
     }
 }
-
