@@ -6,11 +6,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import java.util.ArrayDeque
 
 /** A relayed binary packet. `seq` is monotonically assigned by the server. */
-data class Packet(val seq: Long, val payload: ByteArray) {
+data class Packet(val seq: Long, val verificationKey: String?, val payload: ByteArray) {
     override fun equals(other: Any?): Boolean =
-        other is Packet && other.seq == seq && other.payload.contentEquals(payload)
+        other is Packet && other.seq == seq && other.verificationKey == verificationKey && other.payload.contentEquals(payload)
 
-    override fun hashCode(): Int = 31 * seq.hashCode() + payload.contentHashCode()
+    override fun hashCode(): Int =
+        31 * (31 * seq.hashCode() + (verificationKey?.hashCode() ?: 0)) + payload.contentHashCode()
 }
 
 /**
@@ -31,9 +32,9 @@ class PacketRing(private val maxBytes: Long) {
     val stream: SharedFlow<Packet> = _stream.asSharedFlow()
 
     /** Append a payload, evict oldest as needed, and emit to [stream]. Returns the assigned packet. */
-    suspend fun append(payload: ByteArray): Packet {
+    suspend fun append(payload: ByteArray, verificationKey: String? = null): Packet {
         val packet = synchronized(lock) {
-            val p = Packet(nextSeq++, payload)
+            val p = Packet(nextSeq++, verificationKey, payload)
             deque.addLast(p)
             totalBytes += p.payload.size
             while (totalBytes > maxBytes && deque.size > 1) {
@@ -46,10 +47,10 @@ class PacketRing(private val maxBytes: Long) {
         return packet
     }
 
-    /** Snapshot of currently-buffered packets with seq > [since], in order. */
-    fun snapshotSince(since: Long): List<Packet> = synchronized(lock) {
+    /** Snapshot of currently-buffered packets with seq > [since], optionally filtered by verification keys. */
+    fun snapshotSince(since: Long, keys: Set<String>? = null): List<Packet> = synchronized(lock) {
         if (deque.isEmpty()) emptyList()
-        else deque.filter { it.seq > since }
+        else deque.filter { it.seq > since && (keys == null || it.verificationKey in keys) }
     }
 
     /** Highest seq currently assigned, or 0 if none. */

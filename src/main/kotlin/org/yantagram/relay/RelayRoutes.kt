@@ -26,6 +26,8 @@ import kotlin.time.Duration.Companion.seconds
 private val logger = LoggerFactory.getLogger("org.yantagram.relay.RingStats")
 private val osBean = ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
 
+private const val MAX_VERIFICATION_KEY_LENGTH = 64
+
 /** Constant-time byte-array equality, length-aware. */
 private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean {
     val ad = MessageDigest.getInstance("SHA-256").digest(a)
@@ -33,10 +35,13 @@ private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean {
     return MessageDigest.isEqual(ad, bd) && a.size == b.size
 }
 
-/** Encode `[seq:8 BE][payload]` for delivery to subscribers. */
+/** Encode `[seq:8 BE][keyLen:2 BE][key bytes][payload]` for delivery to subscribers. */
 private fun encodeOutbound(packet: Packet): ByteArray {
-    val buf = ByteBuffer.allocate(8 + packet.payload.size)
+    val keyBytes = packet.verificationKey?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+    val buf = ByteBuffer.allocate(8 + 2 + keyBytes.size + packet.payload.size)
     buf.putLong(packet.seq)
+    buf.putShort(keyBytes.size.toShort())
+    buf.put(keyBytes)
     buf.put(packet.payload)
     return buf.array()
 }
@@ -88,23 +93,34 @@ fun Application.relayModule(
                 return@post
             }
 
+            val verificationKey = call.request.headers["X-Verification-Key"]
+            if (verificationKey != null && verificationKey.length > MAX_VERIFICATION_KEY_LENGTH) {
+                call.respond(HttpStatusCode.BadRequest, "verification key exceeds $MAX_VERIFICATION_KEY_LENGTH characters")
+                return@post
+            }
+
             val body = call.receive<ByteArray>()
             if (body.isEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, "empty payload")
                 return@post
             }
 
-            ring.append(body)
+            ring.append(body, verificationKey)
             call.respond(HttpStatusCode.NoContent)
         }
 
-        // Subscriber endpoint: optional ?since=<seq> for catch-up replay.
+        // Subscriber endpoint: optional ?since=<seq> and ?keys=<comma-separated> for filtering.
         webSocket("/subscribe") {
             val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
+            val keys = call.request.queryParameters["keys"]
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.toSet()
 
             // Subscribe to the live stream BEFORE replay so we don't miss anything.
             // Snapshot first; live collector will skip anything <= the highest replayed seq.
-            val replay = ring.snapshotSince(since)
+            val replay = ring.snapshotSince(since, keys)
             var lastDelivered = since
             for (p in replay) {
                 outgoing.send(Frame.Binary(true, encodeOutbound(p)))
@@ -113,7 +129,7 @@ fun Application.relayModule(
 
             try {
                 ring.stream.collect { p ->
-                    if (p.seq > lastDelivered) {
+                    if (p.seq > lastDelivered && (keys == null || p.verificationKey in keys)) {
                         outgoing.send(Frame.Binary(true, encodeOutbound(p)))
                         lastDelivered = p.seq
                     }
