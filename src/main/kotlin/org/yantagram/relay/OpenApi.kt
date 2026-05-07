@@ -112,6 +112,10 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                     with seq > `since` (if provided), then streams new packets in real-time.
                     If `keys` is specified, only packets tagged with a matching verification key are delivered.
                     Each message is a binary frame: [seq:8 bytes big-endian][keyLen:2 bytes big-endian][key bytes][payload].
+                    
+                    The server sends periodic heartbeat frames (seq=0, empty payload) as keep-alive.
+                    Clients should ignore frames with seq=0 and must send periodic binary heartbeat
+                    frames (any content) to avoid being disconnected for inactivity.
                     """.trimIndent()
                 )
 

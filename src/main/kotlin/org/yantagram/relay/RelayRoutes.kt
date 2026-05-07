@@ -10,7 +10,9 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
+import io.ktor.websocket.close
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
@@ -21,6 +23,7 @@ import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 private val logger = LoggerFactory.getLogger("org.yantagram.relay.RingStats")
@@ -34,6 +37,9 @@ private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean {
     val bd = MessageDigest.getInstance("SHA-256").digest(b)
     return MessageDigest.isEqual(ad, bd) && a.size == b.size
 }
+
+/** Application-level heartbeat: seq=0, keyLen=0, empty payload — 10 bytes. */
+private val HEARTBEAT_FRAME = Frame.Binary(true, ByteArray(10))
 
 /** Encode `[seq:8 BE][keyLen:2 BE][key bytes][payload]` for delivery to subscribers. */
 private fun encodeOutbound(packet: Packet): ByteArray {
@@ -129,8 +135,44 @@ fun Application.relayModule(
                 ?.filter { it.isNotEmpty() }
                 ?.toSet()
 
-            // Subscribe to the live stream BEFORE replay so we don't miss anything.
-            // Snapshot first; live collector will skip anything <= the highest replayed seq.
+            // Server→client keep-alive: send heartbeat every N seconds.
+            if (config.keepAlivePeriodSeconds > 0) {
+                launch {
+                    while (true) {
+                        delay(config.keepAlivePeriodSeconds.seconds)
+                        outgoing.send(HEARTBEAT_FRAME)
+                    }
+                }
+            }
+
+            // Client heartbeat watchdog: close if no message received within timeout.
+            val lastClientMessage = AtomicLong(System.currentTimeMillis())
+            if (config.clientHeartbeatTimeoutSeconds > 0) {
+                launch {
+                    val checkInterval = (config.clientHeartbeatTimeoutSeconds.seconds / 2)
+                    while (true) {
+                        delay(checkInterval)
+                        val elapsed = System.currentTimeMillis() - lastClientMessage.get()
+                        if (elapsed > config.clientHeartbeatTimeoutSeconds * 1000) {
+                            close(CloseReason(CloseReason.Codes.GOING_AWAY, "client heartbeat timeout"))
+                            return@launch
+                        }
+                    }
+                }
+            }
+
+            // Drain incoming frames (client heartbeats) in background.
+            launch {
+                try {
+                    for (frame in incoming) {
+                        lastClientMessage.set(System.currentTimeMillis())
+                    }
+                } catch (_: ClosedReceiveChannelException) {
+                    // peer closed
+                }
+            }
+
+            // Replay + live stream.
             val replay = ring.snapshotSince(since, keys)
             var lastDelivered = since
             for (p in replay) {
