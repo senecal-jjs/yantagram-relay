@@ -101,6 +101,76 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
             }
         }
 
+        putJsonObject("/push/register") {
+            putJsonObject("post") {
+                put("summary", "Register an Expo push token")
+                put("operationId", "registerPushToken")
+                put("description", "Registers an Expo push token for periodic silent sync notifications. Requires X-Publish-Secret authentication. Body is the raw Expo push token string.")
+
+                putJsonArray("security") {
+                    add(buildJsonObject { putJsonArray("publishSecret") {} })
+                }
+
+                putJsonObject("requestBody") {
+                    put("required", true)
+                    putJsonObject("content") {
+                        putJsonObject("text/plain") {
+                            putJsonObject("schema") {
+                                put("type", "string")
+                                put("description", "Expo push token (e.g. ExponentPushToken[xxx])")
+                            }
+                        }
+                    }
+                }
+
+                putJsonObject("responses") {
+                    putJsonObject("204") {
+                        put("description", "Token registered successfully.")
+                    }
+                    putJsonObject("400") {
+                        put("description", "Empty token.")
+                    }
+                    putJsonObject("401") {
+                        put("description", "Missing or invalid X-Publish-Secret header.")
+                    }
+                }
+            }
+
+            putJsonObject("delete") {
+                put("summary", "Unregister an Expo push token")
+                put("operationId", "unregisterPushToken")
+                put("description", "Removes an Expo push token so it no longer receives sync notifications. Requires X-Publish-Secret authentication. Body is the raw Expo push token string.")
+
+                putJsonArray("security") {
+                    add(buildJsonObject { putJsonArray("publishSecret") {} })
+                }
+
+                putJsonObject("requestBody") {
+                    put("required", true)
+                    putJsonObject("content") {
+                        putJsonObject("text/plain") {
+                            putJsonObject("schema") {
+                                put("type", "string")
+                                put("description", "Expo push token to unregister")
+                            }
+                        }
+                    }
+                }
+
+                putJsonObject("responses") {
+                    putJsonObject("204") {
+                        put("description", "Token unregistered successfully.")
+                    }
+                    putJsonObject("400") {
+                        put("description", "Empty token.")
+                    }
+                    putJsonObject("401") {
+                        put("description", "Missing or invalid X-Publish-Secret header.")
+                    }
+                }
+            }
+        }
+
         putJsonObject("/subscribe") {
             putJsonObject("get") {
                 put("summary", "Subscribe to live packet stream (WebSocket)")

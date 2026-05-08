@@ -20,6 +20,12 @@ data class RelayConfig(
     val dbFlushIntervalMs: Long = 500,
     /** Max DB history retention in bytes. 0 = unlimited. */
     val dbMaxHistoryBytes: Long = 0,
+    /** Enable Expo push notifications. */
+    val pushEnabled: Boolean = false,
+    /** Expo access token for enhanced rate limits (optional). */
+    val expoAccessToken: String? = null,
+    /** Interval in hours between silent sync pushes. */
+    val pushIntervalHours: Long = 1,
 ) {
     companion object {
         fun fromEnv(): RelayConfig {
@@ -37,6 +43,9 @@ data class RelayConfig(
                 dbPath = System.getenv("DB_PATH") ?: "yantagram-relay.db",
                 dbFlushIntervalMs = System.getenv("DB_FLUSH_INTERVAL_MS")?.toLongOrNull() ?: 500,
                 dbMaxHistoryBytes = System.getenv("DB_MAX_HISTORY_BYTES")?.toLongOrNull() ?: 0,
+                pushEnabled = System.getenv("PUSH_ENABLED")?.toBooleanStrictOrNull() ?: false,
+                expoAccessToken = System.getenv("EXPO_ACCESS_TOKEN"),
+                pushIntervalHours = System.getenv("PUSH_INTERVAL_HOURS")?.toLongOrNull() ?: 24,
             )
         }
     }

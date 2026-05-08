@@ -6,6 +6,7 @@ import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
@@ -64,6 +65,7 @@ internal fun jvmAwareLimitProvider(config: RelayConfig): RingLimitProvider = Rin
 fun Application.relayModule(
     config: RelayConfig,
     ring: PacketRing = PacketRing(jvmAwareLimitProvider(config)),
+    pushTokenStore: PushTokenStore? = null,
 ) {
     install(WebSockets) {
         maxFrameSize = config.maxFrameBytes
@@ -189,6 +191,43 @@ fun Application.relayModule(
                 }
             } catch (_: ClosedReceiveChannelException) {
                 // peer closed
+            }
+        }
+
+        // Push token registration endpoints (only if push is configured).
+        if (pushTokenStore != null) {
+            post("/push/register") {
+                val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
+                if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
+                    call.respond(HttpStatusCode.Unauthorized, "unauthorized")
+                    return@post
+                }
+
+                val token = call.receive<String>().trim()
+                if (token.isEmpty()) {
+                    call.respond(HttpStatusCode.BadRequest, "empty token")
+                    return@post
+                }
+
+                pushTokenStore.register(token)
+                call.respond(HttpStatusCode.NoContent)
+            }
+
+            delete("/push/register") {
+                val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
+                if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
+                    call.respond(HttpStatusCode.Unauthorized, "unauthorized")
+                    return@delete
+                }
+
+                val token = call.receive<String>().trim()
+                if (token.isEmpty()) {
+                    call.respond(HttpStatusCode.BadRequest, "empty token")
+                    return@delete
+                }
+
+                pushTokenStore.unregister(token)
+                call.respond(HttpStatusCode.NoContent)
             }
         }
     }

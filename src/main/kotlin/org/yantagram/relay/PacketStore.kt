@@ -52,7 +52,7 @@ class PacketStore(
     private val flushIntervalMs: Long = 500,
     private val maxHistoryBytes: Long = 0,
 ) {
-    private val db: Database = if (dbPath == ":memory:") {
+    internal val db: Database = if (dbPath == ":memory:") {
         // For in-memory DBs, use a single connection to avoid losing tables across connections
         Database.connect("jdbc:sqlite::memory:", driver = "org.sqlite.JDBC")
     } else {

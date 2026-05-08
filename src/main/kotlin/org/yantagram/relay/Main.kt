@@ -22,10 +22,26 @@ fun main() {
     ring.restore()
     store.startFlusher(CoroutineScope(Dispatchers.Default))
 
+    // Push notifications (optional).
+    val pushTokenStore: PushTokenStore?
+    val pushNotifier: PushNotifier?
+    if (config.pushEnabled) {
+        pushTokenStore = PushTokenStore(store.db)
+        pushTokenStore.init()
+        pushNotifier = PushNotifier(
+            tokenStore = pushTokenStore,
+            intervalHours = config.pushIntervalHours,
+        )
+        pushNotifier.start(CoroutineScope(Dispatchers.Default))
+    } else {
+        pushTokenStore = null
+        pushNotifier = null
+    }
+
     embeddedServer(
         factory = CIO,
         port = config.port,
         host = config.host,
-        module = { relayModule(config, ring) },
+        module = { relayModule(config, ring, pushTokenStore) },
     ).start(wait = true)
 }

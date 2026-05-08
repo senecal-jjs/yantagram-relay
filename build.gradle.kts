@@ -29,6 +29,9 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
     implementation("org.xerial:sqlite-jdbc:3.46.1.0")
 
+    // Expo push notifications
+    implementation("io.github.jav:expo-server-sdk:1.1.0")
+
     testImplementation(kotlin("test"))
     testImplementation("io.ktor:ktor-server-test-host-jvm:$ktorVersion")
     testImplementation("io.ktor:ktor-client-websockets-jvm:$ktorVersion")
