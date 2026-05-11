@@ -21,7 +21,7 @@ data class RelayConfig(
     /** Max DB history retention in bytes. 0 = unlimited. */
     val dbMaxHistoryBytes: Long = 0,
     /** Enable Expo push notifications. */
-    val pushEnabled: Boolean = false,
+    val pushEnabled: Boolean = true,
     /** Expo access token for enhanced rate limits (optional). */
     val expoAccessToken: String? = null,
     /** Interval in hours between silent sync pushes. */
