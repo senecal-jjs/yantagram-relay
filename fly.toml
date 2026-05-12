@@ -6,6 +6,7 @@ primary_region = 'sjc'
 [env]
   PORT = '8080'
   DB_PATH = '/data/yantagram-relay.db'
+  PUSH_ENABLED = "true"
 # fly volumes create relay_data --region sjc --size 1
 
 [mounts]

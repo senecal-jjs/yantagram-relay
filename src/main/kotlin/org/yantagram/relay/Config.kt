@@ -45,7 +45,7 @@ data class RelayConfig(
                 dbMaxHistoryBytes = System.getenv("DB_MAX_HISTORY_BYTES")?.toLongOrNull() ?: 0,
                 pushEnabled = System.getenv("PUSH_ENABLED")?.toBooleanStrictOrNull() ?: false,
                 expoAccessToken = System.getenv("EXPO_ACCESS_TOKEN"),
-                pushIntervalHours = System.getenv("PUSH_INTERVAL_HOURS")?.toLongOrNull() ?: 24,
+                pushIntervalHours = System.getenv("PUSH_INTERVAL_HOURS")?.toLongOrNull() ?: 1,
             )
         }
     }
