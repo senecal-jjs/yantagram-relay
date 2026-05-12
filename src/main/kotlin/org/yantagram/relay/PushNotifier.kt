@@ -33,8 +33,8 @@ class PushNotifier(
         pushLogger.info("Push notifier started (interval={}h)", intervalHours)
         schedulerJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                delay(intervalHours.hours)
                 sendSyncPush()
+                delay(intervalHours.hours)
             }
         }
     }
