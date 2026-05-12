@@ -194,41 +194,49 @@ fun Application.relayModule(
             }
         }
 
-        // Push token registration endpoints (only if push is configured).
-        if (pushTokenStore != null) {
-            post("/push/register") {
-                val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
-                if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
-                    call.respond(HttpStatusCode.Unauthorized, "unauthorized")
-                    return@post
-                }
-
-                val token = call.receive<String>().trim()
-                if (token.isEmpty()) {
-                    call.respond(HttpStatusCode.BadRequest, "empty token")
-                    return@post
-                }
-
-                pushTokenStore.register(token)
-                call.respond(HttpStatusCode.NoContent)
+        // Push token registration endpoints.
+        post("/push/register") {
+            val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
+            if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
+                call.respond(HttpStatusCode.Unauthorized, "unauthorized")
+                return@post
             }
 
-            delete("/push/register") {
-                val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
-                if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
-                    call.respond(HttpStatusCode.Unauthorized, "unauthorized")
-                    return@delete
-                }
-
-                val token = call.receive<String>().trim()
-                if (token.isEmpty()) {
-                    call.respond(HttpStatusCode.BadRequest, "empty token")
-                    return@delete
-                }
-
-                pushTokenStore.unregister(token)
-                call.respond(HttpStatusCode.NoContent)
+            if (pushTokenStore == null) {
+                call.respond(HttpStatusCode.NotFound, "push notifications are not enabled")
+                return@post
             }
+
+            val token = call.receive<String>().trim()
+            if (token.isEmpty()) {
+                call.respond(HttpStatusCode.BadRequest, "empty token")
+                return@post
+            }
+
+            pushTokenStore.register(token)
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        delete("/push/register") {
+            val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
+            if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
+                call.respond(HttpStatusCode.Unauthorized, "unauthorized")
+                return@delete
+            }
+
+            if (pushTokenStore == null) {
+                call.respond(HttpStatusCode.NotFound, "push notifications are not enabled")
+                return@delete
+            }
+
+            val token = call.receive<String>().trim()
+            if (token.isEmpty()) {
+                call.respond(HttpStatusCode.BadRequest, "empty token")
+                return@delete
+            }
+
+            pushTokenStore.unregister(token)
+            call.respond(HttpStatusCode.NoContent)
         }
     }
 }
