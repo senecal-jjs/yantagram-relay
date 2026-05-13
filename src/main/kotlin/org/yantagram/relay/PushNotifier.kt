@@ -92,7 +92,7 @@ class PushNotifier(
         for (batch in allTokens.chunked(100)) {
             try {
                 val message = ExpoPushMessage(batch)
-                message.title = "New Message"
+                message.title = "Yantagram"
                 message.body = "You have a new message"
                 message.sound = ExpoMessageSound()
                 message.priority = Priority.NORMAL
