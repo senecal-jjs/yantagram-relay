@@ -212,6 +212,7 @@ fun Application.relayModule(
                     // peer closed
                 }
             } finally {
+                logger.debug("WebSocket session ended for VK={}, deregistering", subscriberVk ?: "(none)")
                 subscriberRegistry.onDisconnect(subscriberVkSet)
             }
         }
