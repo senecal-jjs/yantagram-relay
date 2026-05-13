@@ -13,15 +13,18 @@ import org.slf4j.LoggerFactory
 
 private val tokenLogger = LoggerFactory.getLogger("org.yantagram.relay.PushTokenStore")
 
-/** Exposed table for Expo push tokens. */
+/** Exposed table for Expo push tokens, keyed by token with a VK association. */
 object PushTokensTable : Table("push_tokens") {
     val token = text("token")
-    val createdAt = long("created_at")
+    val verificationKey = text("verification_key").index("idx_push_tokens_vk")
+    val registeredAt = long("registered_at")
     override val primaryKey = PrimaryKey(token)
 }
 
 /**
  * SQLite-backed store for Expo push notification tokens.
+ * Each token is associated with exactly one verification key (hex Ed25519 public key).
+ * A single VK may have multiple tokens (multiple devices).
  * Shares the same database as [PacketStore].
  */
 class PushTokenStore(private val db: Database) {
@@ -34,18 +37,22 @@ class PushTokenStore(private val db: Database) {
         tokenLogger.info("PushTokenStore initialized")
     }
 
-    /** Register (or re-register) a push token. */
-    fun register(token: String) {
+    /**
+     * Register (or re-register) a push token for a verification key.
+     * If the token already exists under a different VK, it is reassigned.
+     */
+    fun register(verificationKey: String, token: String) {
         transaction(db) {
             PushTokensTable.upsert {
                 it[PushTokensTable.token] = token
-                it[createdAt] = System.currentTimeMillis()
+                it[PushTokensTable.verificationKey] = verificationKey
+                it[registeredAt] = System.currentTimeMillis()
             }
         }
-        tokenLogger.debug("Registered push token: {}...", token.take(20))
+        tokenLogger.debug("Registered push token: {}... for VK: {}...", token.take(20), verificationKey.take(12))
     }
 
-    /** Unregister a push token. */
+    /** Unregister a push token regardless of which VK it belongs to. */
     fun unregister(token: String) {
         transaction(db) {
             PushTokensTable.deleteWhere { PushTokensTable.token eq token }
@@ -62,7 +69,21 @@ class PushTokenStore(private val db: Database) {
         tokenLogger.info("Removed {} stale push tokens", tokens.size)
     }
 
-    /** Get all registered tokens. */
+    /**
+     * Look up all registered tokens for the given verification keys.
+     * Returns a map of VK → list of tokens.
+     */
+    fun getTokensForKeys(vks: List<String>): Map<String, List<String>> {
+        if (vks.isEmpty()) return emptyMap()
+        return transaction(db) {
+            PushTokensTable.selectAll()
+                .where { PushTokensTable.verificationKey inList vks }
+                .groupBy { it[PushTokensTable.verificationKey] }
+                .mapValues { (_, rows) -> rows.map { it[PushTokensTable.token] } }
+        }
+    }
+
+    /** Get all registered tokens (flat list). */
     fun getAllTokens(): List<String> = transaction(db) {
         PushTokensTable.selectAll().map { it[PushTokensTable.token] }
     }

@@ -105,10 +105,22 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
             putJsonObject("post") {
                 put("summary", "Register an Expo push token")
                 put("operationId", "registerPushToken")
-                put("description", "Registers an Expo push token for periodic silent sync notifications. Requires X-Publish-Secret authentication. Body is the raw Expo push token string.")
+                put("description", "Registers an Expo push token associated with a verification key. Requires X-Publish-Secret and X-Verification-Key headers. Body is the raw Expo push token string. A single VK may have multiple tokens (multiple devices). A token may only be associated with one VK at a time.")
 
                 putJsonArray("security") {
                     add(buildJsonObject { putJsonArray("publishSecret") {} })
+                }
+
+                putJsonArray("parameters") {
+                    add(buildJsonObject {
+                        put("name", "X-Verification-Key")
+                        put("in", "header")
+                        put("required", true)
+                        put("description", "Hex-encoded Ed25519 verification key identifying the user.")
+                        putJsonObject("schema") {
+                            put("type", "string")
+                        }
+                    })
                 }
 
                 putJsonObject("requestBody") {
@@ -124,11 +136,11 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                 }
 
                 putJsonObject("responses") {
-                    putJsonObject("204") {
+                    putJsonObject("200") {
                         put("description", "Token registered successfully.")
                     }
                     putJsonObject("400") {
-                        put("description", "Empty token.")
+                        put("description", "Empty token or missing X-Verification-Key.")
                     }
                     putJsonObject("401") {
                         put("description", "Missing or invalid X-Publish-Secret header.")
@@ -139,7 +151,7 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
             putJsonObject("delete") {
                 put("summary", "Unregister an Expo push token")
                 put("operationId", "unregisterPushToken")
-                put("description", "Removes an Expo push token so it no longer receives sync notifications. Requires X-Publish-Secret authentication. Body is the raw Expo push token string.")
+                put("description", "Removes an Expo push token regardless of which verification key it is mapped to. Requires X-Publish-Secret authentication. Body is the raw Expo push token string. Idempotent.")
 
                 putJsonArray("security") {
                     add(buildJsonObject { putJsonArray("publishSecret") {} })
@@ -158,7 +170,7 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                 }
 
                 putJsonObject("responses") {
-                    putJsonObject("204") {
+                    putJsonObject("200") {
                         put("description", "Token unregistered successfully.")
                     }
                     putJsonObject("400") {
@@ -166,6 +178,133 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                     }
                     putJsonObject("401") {
                         put("description", "Missing or invalid X-Publish-Secret header.")
+                    }
+                }
+            }
+        }
+
+        putJsonObject("/push/notify") {
+            putJsonObject("post") {
+                put("summary", "Send push notifications to recipients")
+                put("operationId", "notifyRecipients")
+                put("description", "Requests push notifications be sent to a list of recipient verification keys. For each VK, looks up registered push tokens, skips VKs with active WebSocket subscriptions, applies per-VK debounce (10s), and sends a generic display notification via the Expo Push API. Fire-and-forget from the caller's perspective.")
+
+                putJsonArray("security") {
+                    add(buildJsonObject { putJsonArray("publishSecret") {} })
+                }
+
+                putJsonObject("requestBody") {
+                    put("required", true)
+                    putJsonObject("content") {
+                        putJsonObject("application/json") {
+                            putJsonObject("schema") {
+                                put("type", "object")
+                                putJsonObject("properties") {
+                                    putJsonObject("recipients") {
+                                        put("type", "array")
+                                        putJsonObject("items") {
+                                            put("type", "string")
+                                            put("description", "Hex-encoded Ed25519 verification key")
+                                        }
+                                        put("description", "List of recipient verification keys to notify")
+                                    }
+                                }
+                                putJsonArray("required") {
+                                    add(JsonPrimitive("recipients"))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                putJsonObject("responses") {
+                    putJsonObject("200") {
+                        put("description", "Notification request accepted (push delivery is best-effort).")
+                    }
+                    putJsonObject("400") {
+                        put("description", "Invalid JSON body.")
+                    }
+                    putJsonObject("401") {
+                        put("description", "Missing or invalid X-Publish-Secret header.")
+                    }
+                }
+            }
+        }
+
+        putJsonObject("/poll") {
+            putJsonObject("get") {
+                put("summary", "Poll queued messages over HTTPS")
+                put("operationId", "pollMessages")
+                put(
+                    "description",
+                    "Returns up to 50 queued message frames as a JSON array of base64-encoded strings. " +
+                        "Each decoded string has the same binary format as WebSocket frames: " +
+                        "[seq:8 bytes BE][keyLen:2 bytes BE][key bytes][payload]. " +
+                        "The X-Last-Seq response header contains the highest seq returned (or the since value if empty). " +
+                        "Designed for background fetch after a silent push wakes the app."
+                )
+
+                putJsonArray("security") {
+                    add(buildJsonObject { putJsonArray("publishSecret") {} })
+                }
+
+                putJsonArray("parameters") {
+                    add(buildJsonObject {
+                        put("name", "since")
+                        put("in", "query")
+                        put("required", false)
+                        put("description", "Sequence number for catch-up. Only packets with seq > since are returned.")
+                        putJsonObject("schema") {
+                            put("type", "integer")
+                            put("format", "int64")
+                            put("default", JsonPrimitive(0))
+                        }
+                    })
+                    add(buildJsonObject {
+                        put("name", "keys")
+                        put("in", "query")
+                        put("required", false)
+                        put("description", "Comma-separated list of verification keys to filter by. If omitted, all packets are returned.")
+                        putJsonObject("schema") {
+                            put("type", "string")
+                        }
+                    })
+                }
+
+                putJsonObject("responses") {
+                    putJsonObject("200") {
+                        put("description", "JSON array of base64-encoded message frames.")
+                        putJsonObject("headers") {
+                            putJsonObject("X-Last-Seq") {
+                                put("description", "Highest sequence number in the response, or the since value if no messages.")
+                                putJsonObject("schema") {
+                                    put("type", "integer")
+                                    put("format", "int64")
+                                }
+                            }
+                        }
+                        putJsonObject("content") {
+                            putJsonObject("application/json") {
+                                putJsonObject("schema") {
+                                    put("type", "array")
+                                    putJsonObject("items") {
+                                        put("type", "string")
+                                        put("format", "byte")
+                                        put("description", "Base64-encoded binary frame")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    putJsonObject("401") {
+                        put("description", "Missing or invalid X-Publish-Secret header.")
+                        putJsonObject("content") {
+                            putJsonObject("text/plain") {
+                                putJsonObject("schema") {
+                                    put("type", "string")
+                                }
+                            }
+                        }
                     }
                 }
             }

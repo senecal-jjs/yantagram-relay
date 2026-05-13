@@ -24,8 +24,6 @@ data class RelayConfig(
     val pushEnabled: Boolean = true,
     /** Expo access token for enhanced rate limits (optional). */
     val expoAccessToken: String? = null,
-    /** Interval in hours between silent sync pushes. */
-    val pushIntervalHours: Long = 1,
 ) {
     companion object {
         fun fromEnv(): RelayConfig {
@@ -45,7 +43,6 @@ data class RelayConfig(
                 dbMaxHistoryBytes = System.getenv("DB_MAX_HISTORY_BYTES")?.toLongOrNull() ?: 0,
                 pushEnabled = System.getenv("PUSH_ENABLED")?.toBooleanStrictOrNull() ?: false,
                 expoAccessToken = System.getenv("EXPO_ACCESS_TOKEN"),
-                pushIntervalHours = System.getenv("PUSH_INTERVAL_HOURS")?.toLongOrNull() ?: 1,
             )
         }
     }

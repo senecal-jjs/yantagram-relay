@@ -1,12 +1,16 @@
 package org.yantagram.relay
 
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.request.receive
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.delete
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
@@ -20,10 +24,15 @@ import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.util.Base64
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
@@ -66,6 +75,8 @@ fun Application.relayModule(
     config: RelayConfig,
     ring: PacketRing = PacketRing(jvmAwareLimitProvider(config)),
     pushTokenStore: PushTokenStore? = null,
+    pushNotifier: PushNotifier? = null,
+    subscriberRegistry: SubscriberRegistry = SubscriberRegistry(),
 ) {
     install(WebSockets) {
         maxFrameSize = config.maxFrameBytes
@@ -137,60 +148,67 @@ fun Application.relayModule(
                 ?.filter { it.isNotEmpty() }
                 ?.toSet()
 
-            // Server→client keep-alive: send heartbeat every N seconds.
-            if (config.keepAlivePeriodSeconds > 0) {
-                launch {
-                    while (true) {
-                        delay(config.keepAlivePeriodSeconds.seconds)
-                        outgoing.send(HEARTBEAT_FRAME)
-                    }
-                }
-            }
+            // Track active subscriber for push suppression.
+            subscriberRegistry.onConnect(keys)
 
-            // Client heartbeat watchdog: close if no message received within timeout.
-            val lastClientMessage = AtomicLong(System.currentTimeMillis())
-            if (config.clientHeartbeatTimeoutSeconds > 0) {
-                launch {
-                    val checkInterval = (config.clientHeartbeatTimeoutSeconds.seconds / 2)
-                    while (true) {
-                        delay(checkInterval)
-                        val elapsed = System.currentTimeMillis() - lastClientMessage.get()
-                        if (elapsed > config.clientHeartbeatTimeoutSeconds * 1000) {
-                            close(CloseReason(CloseReason.Codes.GOING_AWAY, "client heartbeat timeout"))
-                            return@launch
+            try {
+                // Server→client keep-alive: send heartbeat every N seconds.
+                if (config.keepAlivePeriodSeconds > 0) {
+                    launch {
+                        while (true) {
+                            delay(config.keepAlivePeriodSeconds.seconds)
+                            outgoing.send(HEARTBEAT_FRAME)
                         }
                     }
                 }
-            }
 
-            // Drain incoming frames (client heartbeats) in background.
-            launch {
+                // Client heartbeat watchdog: close if no message received within timeout.
+                val lastClientMessage = AtomicLong(System.currentTimeMillis())
+                if (config.clientHeartbeatTimeoutSeconds > 0) {
+                    launch {
+                        val checkInterval = (config.clientHeartbeatTimeoutSeconds.seconds / 2)
+                        while (true) {
+                            delay(checkInterval)
+                            val elapsed = System.currentTimeMillis() - lastClientMessage.get()
+                            if (elapsed > config.clientHeartbeatTimeoutSeconds * 1000) {
+                                close(CloseReason(CloseReason.Codes.GOING_AWAY, "client heartbeat timeout"))
+                                return@launch
+                            }
+                        }
+                    }
+                }
+
+                // Drain incoming frames (client heartbeats) in background.
+                launch {
+                    try {
+                        for (frame in incoming) {
+                            lastClientMessage.set(System.currentTimeMillis())
+                        }
+                    } catch (_: ClosedReceiveChannelException) {
+                        // peer closed
+                    }
+                }
+
+                // Replay + live stream.
+                val replay = ring.snapshotSince(since, keys)
+                var lastDelivered = since
+                for (p in replay) {
+                    outgoing.send(Frame.Binary(true, encodeOutbound(p)))
+                    lastDelivered = p.seq
+                }
+
                 try {
-                    for (frame in incoming) {
-                        lastClientMessage.set(System.currentTimeMillis())
+                    ring.stream.collect { p ->
+                        if (p.seq > lastDelivered && (keys == null || p.verificationKey in keys)) {
+                            outgoing.send(Frame.Binary(true, encodeOutbound(p)))
+                            lastDelivered = p.seq
+                        }
                     }
                 } catch (_: ClosedReceiveChannelException) {
                     // peer closed
                 }
-            }
-
-            // Replay + live stream.
-            val replay = ring.snapshotSince(since, keys)
-            var lastDelivered = since
-            for (p in replay) {
-                outgoing.send(Frame.Binary(true, encodeOutbound(p)))
-                lastDelivered = p.seq
-            }
-
-            try {
-                ring.stream.collect { p ->
-                    if (p.seq > lastDelivered && (keys == null || p.verificationKey in keys)) {
-                        outgoing.send(Frame.Binary(true, encodeOutbound(p)))
-                        lastDelivered = p.seq
-                    }
-                }
-            } catch (_: ClosedReceiveChannelException) {
-                // peer closed
+            } finally {
+                subscriberRegistry.onDisconnect(keys)
             }
         }
 
@@ -207,14 +225,20 @@ fun Application.relayModule(
                 return@post
             }
 
+            val verificationKey = call.request.headers["X-Verification-Key"]
+            if (verificationKey.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "X-Verification-Key header is required")
+                return@post
+            }
+
             val token = call.receive<String>().trim()
             if (token.isEmpty()) {
                 call.respond(HttpStatusCode.BadRequest, "empty token")
                 return@post
             }
 
-            pushTokenStore.register(token)
-            call.respond(HttpStatusCode.NoContent)
+            pushTokenStore.register(verificationKey, token)
+            call.respond(HttpStatusCode.OK)
         }
 
         delete("/push/register") {
@@ -236,7 +260,40 @@ fun Application.relayModule(
             }
 
             pushTokenStore.unregister(token)
-            call.respond(HttpStatusCode.NoContent)
+            call.respond(HttpStatusCode.OK)
+        }
+
+        // Push notify endpoint: fire-and-forget push to recipients.
+        post("/push/notify") {
+            val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
+            if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
+                call.respond(HttpStatusCode.Unauthorized, "unauthorized")
+                return@post
+            }
+
+            if (pushNotifier == null) {
+                call.respond(HttpStatusCode.NotFound, "push notifications are not enabled")
+                return@post
+            }
+
+            val body = call.receive<String>()
+            val json = try {
+                kotlinx.serialization.json.Json.parseToJsonElement(body).jsonObject
+            } catch (_: Exception) {
+                call.respond(HttpStatusCode.BadRequest, "invalid JSON")
+                return@post
+            }
+
+            val recipients = json["recipients"]?.jsonArray?.mapNotNull {
+                it.jsonPrimitive.contentOrNull
+            } ?: emptyList()
+
+            // Fire-and-forget: push sending happens asynchronously.
+            launch(Dispatchers.IO) {
+                pushNotifier.notifyRecipients(recipients)
+            }
+
+            call.respond(HttpStatusCode.OK)
         }
     }
 }
