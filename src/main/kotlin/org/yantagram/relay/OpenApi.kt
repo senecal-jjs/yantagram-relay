@@ -349,6 +349,15 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
                             put("type", "string")
                         }
                     })
+                    add(buildJsonObject {
+                        put("name", "vk")
+                        put("in", "query")
+                        put("required", false)
+                        put("description", "The subscriber's own hex-encoded verification key. Used for push notification suppression — while this WebSocket is open, push notifications for this VK are skipped.")
+                        putJsonObject("schema") {
+                            put("type", "string")
+                        }
+                    })
                 }
 
                 putJsonObject("responses") {
