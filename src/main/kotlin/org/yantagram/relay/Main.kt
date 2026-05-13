@@ -22,6 +22,9 @@ fun main() {
     ring.restore()
     store.startFlusher(CoroutineScope(Dispatchers.Default))
 
+    // Shared subscriber registry for push suppression.
+    val subscriberRegistry = SubscriberRegistry()
+
     // Push notifications (optional).
     val pushTokenStore: PushTokenStore?
     val pushNotifier: PushNotifier?
@@ -30,9 +33,8 @@ fun main() {
         pushTokenStore.init()
         pushNotifier = PushNotifier(
             tokenStore = pushTokenStore,
-            intervalHours = config.pushIntervalHours,
+            subscriberRegistry = subscriberRegistry,
         )
-        pushNotifier.start(CoroutineScope(Dispatchers.Default))
     } else {
         pushTokenStore = null
         pushNotifier = null
@@ -42,6 +44,6 @@ fun main() {
         factory = CIO,
         port = config.port,
         host = config.host,
-        module = { relayModule(config, ring, pushTokenStore) },
+        module = { relayModule(config, ring, pushTokenStore, pushNotifier, subscriberRegistry) },
     ).start(wait = true)
 }
