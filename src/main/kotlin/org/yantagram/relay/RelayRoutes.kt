@@ -139,7 +139,7 @@ fun Application.relayModule(
             call.respond(HttpStatusCode.NoContent)
         }
 
-        // Subscriber endpoint: optional ?since=<seq> and ?keys=<comma-separated> for filtering.
+        // Subscriber endpoint: optional ?since=<seq>, ?keys=<csv> for filtering, ?vk=<hex> for push suppression.
         webSocket("/subscribe") {
             val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
             val keys = call.request.queryParameters["keys"]
@@ -148,8 +148,12 @@ fun Application.relayModule(
                 ?.filter { it.isNotEmpty() }
                 ?.toSet()
 
+            // The subscriber's own VK — used to suppress push while they have a live connection.
+            val subscriberVk = call.request.queryParameters["vk"]?.trim()?.takeIf { it.isNotEmpty() }
+            val subscriberVkSet = subscriberVk?.let { setOf(it) }
+
             // Track active subscriber for push suppression.
-            subscriberRegistry.onConnect(keys)
+            subscriberRegistry.onConnect(subscriberVkSet)
 
             try {
                 // Server→client keep-alive: send heartbeat every N seconds.
@@ -208,7 +212,7 @@ fun Application.relayModule(
                     // peer closed
                 }
             } finally {
-                subscriberRegistry.onDisconnect(keys)
+                subscriberRegistry.onDisconnect(subscriberVkSet)
             }
         }
 
