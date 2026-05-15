@@ -101,6 +101,40 @@ fun buildOpenApiSpec(): JsonObject = buildJsonObject {
             }
         }
 
+        putJsonObject("/seq") {
+            putJsonObject("get") {
+                put("summary", "Get latest packet sequence number")
+                put("operationId", "getLatestSeq")
+                put("description", "Returns the current highest packet sequence number. Useful for clients to check if they are behind without opening a WebSocket or polling full messages.")
+
+                putJsonArray("security") {
+                    add(buildJsonObject { putJsonArray("publishSecret") {} })
+                }
+
+                putJsonObject("responses") {
+                    putJsonObject("200") {
+                        put("description", "Current latest sequence number.")
+                        putJsonObject("content") {
+                            putJsonObject("application/json") {
+                                putJsonObject("schema") {
+                                    put("type", "object")
+                                    putJsonObject("properties") {
+                                        putJsonObject("seq") {
+                                            put("type", "integer")
+                                            put("format", "int64")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    putJsonObject("401") {
+                        put("description", "Missing or invalid X-Publish-Secret header.")
+                    }
+                }
+            }
+        }
+
         putJsonObject("/push/register") {
             putJsonObject("post") {
                 put("summary", "Register an Expo push token")

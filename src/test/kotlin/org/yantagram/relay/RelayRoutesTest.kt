@@ -367,4 +367,41 @@ class RelayRoutesTest {
         }
         assertTrue(reason != null, "server should have closed the connection")
     }
+
+    // ── /seq endpoint tests ──
+
+    @Test
+    fun `seq returns latest sequence as JSON`() = testApplication {
+        val cfg = testConfig()
+        val ring = PacketRing(1024L)
+        application { relayModule(cfg, ring) }
+
+        // Empty ring
+        val response1 = client.get("/seq") {
+            header("X-Publish-Secret", secretStr)
+        }
+        assertEquals(HttpStatusCode.OK, response1.status)
+        assertEquals("""{"seq":0}""", response1.bodyAsText())
+
+        // After publishes
+        runBlocking {
+            ring.append("a".toByteArray())
+            ring.append("b".toByteArray())
+        }
+
+        val response2 = client.get("/seq") {
+            header("X-Publish-Secret", secretStr)
+        }
+        assertEquals(HttpStatusCode.OK, response2.status)
+        assertEquals("""{"seq":2}""", response2.bodyAsText())
+    }
+
+    @Test
+    fun `seq without auth returns 401`() = testApplication {
+        val cfg = testConfig()
+        application { relayModule(cfg, PacketRing(1024L)) }
+
+        val response = client.get("/seq")
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+    }
 }

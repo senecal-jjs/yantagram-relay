@@ -139,6 +139,17 @@ fun Application.relayModule(
             call.respond(HttpStatusCode.NoContent)
         }
 
+        // Latest sequence number endpoint.
+        get("/seq") {
+            val headerSecret = call.request.headers["X-Publish-Secret"]?.toByteArray(Charsets.UTF_8)
+            if (headerSecret == null || !constantTimeEquals(headerSecret, config.publishSecret)) {
+                call.respond(HttpStatusCode.Unauthorized, "unauthorized")
+                return@get
+            }
+
+            call.respondText("""{"seq":${ring.latestSeq()}}""", ContentType.Application.Json)
+        }
+
         // Subscriber endpoint: optional ?since=<seq>, ?keys=<csv> for filtering, ?vk=<hex> for push suppression.
         webSocket("/subscribe") {
             val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
