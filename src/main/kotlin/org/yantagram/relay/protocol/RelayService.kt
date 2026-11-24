@@ -32,10 +32,9 @@ class RelayService(
         if (request.items.isEmpty() || request.items.size > MAX_BATCH_ITEMS) throw Rejected("bad-batch")
         val pk = Codec.hexOf(request.pk, WriteAuth.PUBLIC_KEY_BYTES, "bad-pk")
         val sig = Codec.hexOf(request.sig, WriteAuth.SIGNATURE_BYTES, "bad-sig")
-        val legacyTag = request.legacyTag?.let {
-            if (lane == Lane.BLOB) throw Rejected("bad-legacy-tag")
-            Codec.tag(it)
-        }
+        // Any lane: large-file parts (blob) are copied to strfry for older
+        // clients too, under the file message's v1 tag.
+        val legacyTag = request.legacyTag?.let(Codec::tag)
 
         val items = request.items.map { item ->
             val body = Codec.body(item.body)

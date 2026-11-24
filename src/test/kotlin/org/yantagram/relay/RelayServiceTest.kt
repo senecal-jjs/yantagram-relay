@@ -289,4 +289,12 @@ class RelayServiceTest {
         assertEquals(listOf("a", "b"), on.store.outbox(10).map { String(it.body) })
         assertEquals(legacy, Codec.hex(on.store.outbox(10).first().legacyTag))
     }
+
+    @Test
+    fun `large-file parts can carry a legacy tag for the bridge`() = runTest {
+        val relay = TestRelay(bridgeEnabled = true)
+        val legacy = "cd".repeat(16)
+        relay.service.publish(StreamKey().publish(Lane.BLOB, listOf(item("part1"), item("part2")), legacy), ip)
+        assertEquals(listOf("part1", "part2"), relay.store.outbox(10).map { String(it.body) })
+    }
 }
