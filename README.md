@@ -39,9 +39,9 @@ items can't be linked across days.
 
 | Lane | For | Retention | Max item | Per stream |
 |---|---|---|---|---|
-| `inbox` | sealed acks, a new member's history | 60 days, or until the recipient deletes it | 1 MB | 2,000 items / 40 MB |
-| `control` | `GROUP_CONTROL` (ops, delegations, revocations, removals), checkpoints, era handoffs | 180 days; checkpoints 365 | 1 MB | 1,000 / 20 MB |
-| `group` | messages, notices, small files | 30 days | 256 KB | 20,000 / 200 MB |
+| `inbox` | sealed acks, a new member's history | 60 days, or until the recipient deletes it | 1 MB | 20,000 items / 40 MB |
+| `control` | `GROUP_CONTROL` (ops, delegations, revocations, removals), checkpoints, era handoffs | 180 days; checkpoints 365 | 1 MB | 10,000 / 50 MB |
+| `group` | messages, notices, small files | 30 days | 256 KB | 100,000 / 500 MB |
 | `blob` | large-file parts (one stream per file) | 7 days | 64 KB | 400 / 12 MB |
 | `legacy` | events imported from strfry (bridge only) | 7 days | 64 KB | — |
 

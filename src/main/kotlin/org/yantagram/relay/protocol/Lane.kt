@@ -25,9 +25,11 @@ enum class Lane(
     /** Clients may publish here. Legacy streams are written by the strfry bridge only. */
     val clientWritable: Boolean = true,
 ) {
-    INBOX("inbox", 2, 60.days, MB, 2_000, 40L * MB, priority = 0),
-    CONTROL("control", 1, 180.days, MB, 1_000, 20L * MB, priority = 1),
-    GROUP("group", 0, 30.days, 256 * KB, 20_000, 200L * MB, priority = 2),
+    // Per-stream caps allow for today's app, which still publishes packets as
+    // Bluetooth-sized fragments (~470 bytes), one item each.
+    INBOX("inbox", 2, 60.days, MB, 20_000, 40L * MB, priority = 0),
+    CONTROL("control", 1, 180.days, MB, 10_000, 50L * MB, priority = 1),
+    GROUP("group", 0, 30.days, 256 * KB, 100_000, 500L * MB, priority = 2),
     LEGACY("legacy", 4, 7.days, 64 * KB, 50_000, 500L * MB, priority = 3, clientWritable = false),
     /** Large-file parts: one stream per file, 10 MB at most (~250 parts of 40 KB). */
     BLOB("blob", 3, 7.days, 64 * KB, 400, 12L * MB, priority = 4);
