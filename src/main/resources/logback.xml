@@ -1,15 +1,17 @@
 <configuration>
+    <!-- Log events, never tags, tokens, IPs or bodies. Third-party libraries stay at
+         WARN so their debug output (which can include request details) never reaches
+         the logs. -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{ISO8601} %-5level %logger{20} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <!-- Quiet by design: a public relay should not log per-connection details. -->
-    <root level="DEBUG">
+    <logger name="org.yantagram.relay" level="INFO"/>
+    <logger name="io.ktor.server.Application" level="INFO"/>
+
+    <root level="WARN">
         <appender-ref ref="STDOUT"/>
     </root>
-    <logger name="io.ktor" level="INFO"/>
-    <logger name="org.yantagram" level="DEBUG"/>
 </configuration>
-

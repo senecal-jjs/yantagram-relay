@@ -1,31 +1,53 @@
-app = 'yantagram-relay'
-primary_region = 'sjc'
+# A NEW Fly app: the strfry relay still runs as "yantagram-relay" during the
+# migration, and the bridge below reads from and writes to it.
+app = "yantagram-relay-v2"
+primary_region = "iad"           # same region as strfry and the push service
 
 [build]
 
 [env]
-  PORT = '8080'
-  DB_PATH = '/data/yantagram-relay.db'
-  PUSH_ENABLED = "true"
-# fly volumes create relay_data --region sjc --size 1
+  PORT = "8080"
+  METRICS_PORT = "9091"
+  DB_PATH = "/data/relay.db"
+  STRFRY_URL = "ws://yantagram-relay.internal:7777"   # remove to turn the bridge off
+  APNS_TOPIC = "com.yantagram.yantagram"
+  APNS_ENV = "production"
+  COALESCE_SECONDS = "30"
+  ALERT_COALESCE_SECONDS = "10"
+  REGISTRATION_TTL_DAYS = "14"
+# Secrets (fly secrets set; never in the image):
+#   APNS_KEY_P8 APNS_KEY_ID APNS_TEAM_ID FCM_PROJECT_ID FCM_CLIENT_EMAIL FIREBASE_PRIVATE_KEY
+#   LITESTREAM_REPLICA_URL LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY
 
+# fly volumes create relay_v2_data --region iad --size 10
 [mounts]
-  source = 'relay_data'
-  destination = '/data'
+  source = "relay_v2_data"
+  destination = "/data"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = "off"     # live sockets, push and the bridge must stay up
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [http_service.concurrency]
-    type = 'connections'
-    hard_limit = 250
-    soft_limit = 200
+    type = "connections"         # each WebSocket counts as one
+    soft_limit = 1000
+    hard_limit = 1500
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
+# Scraped over the private network; port 9091 has no public service.
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [[vm]]
-  memory = '1024mb'
-  cpu_kind = 'shared'
-  cpus = 1
+  size = "shared-cpu-1x"
+  memory = "1gb"
