@@ -8,7 +8,7 @@ mkdir -p "$DATA_DIR"
 # owner first, then drop privileges for everything below.
 if [ "$(id -u)" = "0" ]; then
   chown -R relay:relay "$DATA_DIR"
-  exec su-exec relay "$0" "$@"
+  exec setpriv --reuid=relay --regid=relay --init-groups "$0" "$@"
 fi
 
 if [ -n "$LITESTREAM_REPLICA_URL" ]; then

@@ -85,7 +85,11 @@ fun main() {
             bridge?.poke()
         },
     )
-    bridge = config.strfryUrl?.let { StrfryBridge(http, it, store, MetaStore(db), service, metrics) }
+    bridge = config.strfryUrl?.let {
+        // Fail at startup, not on the first forward, if the signing library can't load.
+        org.yantagram.relay.bridge.Nostr.eventMessage("00".repeat(16), "", null, 0)
+        StrfryBridge(http, it, store, MetaStore(db), service, metrics)
+    }
 
     Gauge.builder("push_registrations") { registry.size }.register(prometheus)
     Gauge.builder("relay_live_streams") { service.bus.subscribedTags }.register(prometheus)

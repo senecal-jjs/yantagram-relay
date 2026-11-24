@@ -202,8 +202,14 @@ class StrfryBridge(
             } catch (e: CancellationException) {
                 connected.set(false)
                 throw e
-            } catch (e: Exception) {
-                if (attempt % 10 == 0) log.warn("bridge {} connection failed (attempt {}): {}", name, attempt + 1, e.javaClass.simpleName)
+            } catch (e: Throwable) {
+                // Errors too (a native library that won't load): the loop must keep going
+                // and /health must stop saying "connected".
+                if (e !is Exception) {
+                    log.error("ALERT bridge {} failed: {}", name, e.javaClass.name)
+                } else if (attempt % 10 == 0) {
+                    log.warn("bridge {} connection failed (attempt {}): {}", name, attempt + 1, e.javaClass.simpleName)
+                }
             }
             if (connected.getAndSet(false)) log.warn("bridge {} disconnected", name)
             metrics.bridgeReconnects.increment()

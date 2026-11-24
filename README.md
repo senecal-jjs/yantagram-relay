@@ -187,10 +187,12 @@ Old app versions only use strfry. While they're still around, the bridge
   oversized control items to old clients as fragments, through `legacy_tag`.
 - After a connection drop, an item may be forwarded twice (with different Nostr
   ids). Clients already dedupe packets.
-- **strfry write policy change needed:** the bridge publishes everyone's items from
-  one address, which trips the per-IP limits in `yantagram-policy.js` (200 events per
-  10 s, 200 MB a day). Exempt the bridge's source, for example any `sourceInfo` in
-  Fly's private network (`fdaa:`), before turning the bridge on.
+- **strfry must exempt the bridge from its per-IP limits.** The bridge publishes
+  everyone's items from one address, which would trip `yantagram-policy.js`'s
+  200 events per 10 s. The updated policy trusts sources in Fly's private network
+  (`TRUSTED_SOURCE_PREFIXES`, default `fdaa:`). Deploy that before turning the
+  bridge on. Without it the bridge still delivers everything, in order, but
+  throttled.
 
 Turn the bridge off (unset `STRFRY_URL`) at the sunset described in the design.
 
@@ -217,6 +219,7 @@ Push is off unless APNs or FCM credentials are set. The bridge is off unless
 | `COALESCE_SECONDS`, `ALERT_COALESCE_SECONDS` | 30, 10 | Push coalescing |
 | `REGISTRATION_TTL_DAYS`, `MAX_REGISTRATIONS` | 14, 200000 | Push registrations |
 | `LITESTREAM_REPLICA_URL`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | unset | Replication (Docker image only) |
+| `LITESTREAM_ENDPOINT`, `LITESTREAM_FORCE_PATH_STYLE` | unset | For S3-compatible stores other than AWS (Tigris: `https://fly.storage.tigris.dev`) |
 
 ## Deploying
 

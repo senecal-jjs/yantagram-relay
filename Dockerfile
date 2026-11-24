@@ -6,13 +6,18 @@ RUN chmod +x gradlew && ./gradlew dependencies --no-daemon -q > /dev/null || tru
 COPY src src
 RUN ./gradlew installDist --no-daemon -x test
 
-FROM eclipse-temurin:21-jre-alpine
+# glibc (Ubuntu), not Alpine: the secp256k1 JNI library the bridge signs with is
+# built against glibc and fails to load on musl.
+FROM eclipse-temurin:21-jre
 # Litestream ships the SQLite WAL to object storage continuously (see README).
 ARG LITESTREAM_VERSION=0.3.13
-RUN apk add --no-cache su-exec ca-certificates \
- && wget -qO- "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-amd64.tar.gz" \
+# Set by BuildKit: amd64 on Fly, arm64 on Apple silicon.
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget \
+ && rm -rf /var/lib/apt/lists/* \
+ && wget -qO- "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-${TARGETARCH:-amd64}.tar.gz" \
     | tar -xz -C /usr/local/bin litestream \
- && addgroup -S relay && adduser -S -G relay -H relay
+ && groupadd --system relay && useradd --system --gid relay --no-create-home relay
 WORKDIR /app
 COPY --from=build /app/build/install/yantagram-relay ./
 COPY litestream.yml /etc/litestream.yml
