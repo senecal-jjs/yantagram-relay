@@ -1,0 +1,14 @@
+# Continuous replication of the relay database. Credentials come from the
+# environment (LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY, Fly secrets).
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}
+        # S3-compatible stores other than AWS (Tigris on Fly, MinIO in tests) need
+        # their endpoint; leave both unset for AWS.
+        endpoint: ${LITESTREAM_ENDPOINT}
+        force-path-style: ${LITESTREAM_FORCE_PATH_STYLE}
+        # How often WAL frames are shipped: the most an acknowledged item can be
+        # exposed to losing the volume (clients re-check with `have`).
+        sync-interval: 1s
+        retention: 168h
